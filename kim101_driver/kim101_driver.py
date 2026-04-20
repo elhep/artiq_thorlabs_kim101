@@ -17,6 +17,7 @@ from typing import Optional, Tuple, List, Any
 from dataclasses import dataclass
 import abc
 import logging
+from kim101_driver_I import *
 
 
 class KIM101Error(Exception):
@@ -101,276 +102,6 @@ class ChannelEnableMode(IntEnum):
     CHANNEL_4 = 0x04
     CHANNELS_1_2 = 0x05
     CHANNELS_3_4 = 0x06
-
-DriveParameters = Tuple[int, int, int]
-'''Parameters of the DriveOPParameters subcommands
-* [0] - MaxVoltage: Maximum voltage of the driver in range 85-125 V
-* [1] - StepRate: Speed of the voltage ramp in steps/sec (range: 1-2000)
-* [2] - StepAccel: Acceleration of the voltage ramp in steps/sec^2 (range: 1-100 000)
-'''
-
-JogParameters = Tuple[int, int, int, int, int]
-'''Parameters of the PZMOT_KCubeJogParams subcommands
-* [0] - JogMode - Mode of jog movement
-    * 0x01: Continuous - After receiving jog signal driver continuously generates ramps using JogStepRate and JogStepAccn parameters
-    * 0x02: Single - After receiving jog signal driver performs one step defined by JogStepSizeFwd and JogStepSizeRev parameters
-* [1] - JogStepSizeFwd - Number of steps in one forward jog in steps (range: 1-2000)
-* [2] - JogStepSizeRev - Number of steps in one reverse jog in steps (range: 1-2000)
-* [3] - JogStepRate - Speed of the voltage ramp in steps/sec (range: 1-2000)
-* [4] - JogStepAccn: Acceleration of the step rate in steps/sec^2 (range: 1-100 000)
-'''
-
-MMIParameters = Tuple[int, int, int, int, int, int]
-'''Parameters of the PZMOT_KCubeMMIParams subcommands
-* [0] - JSMode: Mode of joystick operation. Available values:
-    * 0x01: Velocity control mode - movement caused by joystick is proportional to its deflection 
-    and limited by JSMaxStepRate
-    * 0x02: Jog mode - Joystick deflection causes jog move
-    * 0x03: Position mode - Joystick deflection left or up causes chnnels to move to preset 1; 
-    deflection right or down - move to preset 2
-* [1] - JSMaxStepRate: Maximal speed of the joystick movement in steps/sec (range: 1-2000)
-* [2] - JSDirSense: Direction of movement triggered by joystick. Avaliable values:
-    * 0x00: Joystick can't trigger movement
-    * 0x01: Up/Right joystick causes forward motion
-    * 0x02: Up/Right joystick causes reverse motion
-* [3] - PresetPos1: Preset 1 used in the position mode
-* [4] - PresetPos2: Preset 2 used in the position mode
-* [5] - DispBrightness: Brightness of the LCD display (range: 1-100)
-'''
-
-TriggerIOConfig = Tuple[int, int, int, int, int, int]
-'''Parameters of the PZMOT_KCubeTrigIOConfig subcommands
-* [0] - TrigChannel1: drive channel using IO1 as trigger. Accepted values:
-    * 0x01: CH1
-    * 0x02: CH2
-    * 0x04: CH3
-    * 0x08: CH4
-* [1] - TrigChannel2: drive channel using IO2 as trigger. Accepted values:
-    * 0x01: CH1
-    * 0x02: CH2
-    * 0x04: CH3
-    * 0x08: CH4
-* [2] - Trig1Mode - mode of the IO1 trigger. Accepted values:
-    * 0x00: DISABLED
-    * 0x01: GPI
-    * 0x02: RELMOVE
-    * 0x03: ABSMOVE
-    * 0x04: RESETCOUNT
-    * 0x0A: GPO
-    * 0x0B: INMOTION
-    * 0x0C: MAXVELOCITY
-    * 0x0D: POSSTEPS_FWD
-    * 0x0E: POSSTEPS_REV
-    * 0x0F: POSSTEPS_BOTH
-    * 0x10: FWDLIMIT
-    * 0x11: REVLIMIT
-    * 0x12: EITHERLIMIT
-* [3] - Trig1Polarity - polarity of the IO1 trigger. Accepted values:
-    * 0x01: HIGH
-    * 0x02: LOW
-* [4] - Trig2Mode - mode of the IO1 trigger. Accepted values:
-    * 0x00: DISABLED
-    * 0x01: GPI
-    * 0x02: RELMOVE
-    * 0x03: ABSMOVE
-    * 0x04: RESETCOUNT
-    * 0x0A: GPO
-    * 0x0B: INMOTION
-    * 0x0C: MAXVELOCITY
-    * 0x0D: POSSTEPS_FWD
-    * 0x0E: POSSTEPS_REV
-    * 0x0F: POSSTEPS_BOTH
-    * 0x10: FWDLIMIT
-    * 0x11: REVLIMIT
-    * 0x12: EITHERLIMIT
-* [5] - Trig2Polarity - polarity of the IO2 trigger. Accepted values:
-    * 0x01: HIGH
-    * 0x02: LOW
-'''
-
-TriggerParameters = Tuple[int, int, int, int, int, int, int, int]
-'''Parameters of the PZMOT_KCubeTrigParams subcommands
-* [0] - StartPosFwd: position (position steps) in a forward move, at which pulse sequence generation starts
-* [1] - IntervalFwd: position interval (position steps) between pulses in a forward move
-* [2] - NumPulsesFwd: number of pulses in a sequence in a forward move
-* [3] - StartPosRev: position (position steps) in a reverse move, at which pulse sequence generation starts
-* [4] - IntervalRev: position interval (position steps) between pulses in a reverse move
-* [5] - NumPulsesRev: number of pulses in a sequence in a reverse move
-* [6] - PulseWidth: duration of pulses (1 - 100 000 us)
-* [7] - NumCycles: number of forward/reverse pulse sequences
-'''
-
-LimitSwitchParamers = Tuple[int, int]
-'''Parameters of Get_PZMOT_LimSwitchParams subcommands
-* [0] - FwdHardLimit
-* [1] - RevHardLimit
-'''
-
-
-@dataclass
-class StatusBits:
-    """Status bit flags"""
-    fwd_limit_active: bool
-    rev_limit_active: bool
-    moving_fwd: bool
-    moving_rev: bool
-    jogging_fwd: bool
-    jogging_rev: bool
-    motor_connected: bool
-    homing: bool
-    homed: bool
-    digital_input1: bool
-    power_ok: bool
-    active: bool
-    error: bool
-    enabled: bool
-    excessive_current: bool
-    excessive_temp: bool
-    abnormal_movement: bool
-    wrong_stage: bool
-
-
-@dataclass
-class ChannelStatus:
-    """Complete channel status"""
-    channel: Channel
-    position: int
-    enc_count: int
-    status: StatusBits
-
-class KIM101Interface:
-
-    @abc.abstractmethod
-    async def connect(self) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def close(self) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_hardware_info(self) -> dict[str, Any]:
-        pass
-
-    @abc.abstractmethod
-    async def start_status_updates(self) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def stop_status_updates(self) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_status_update(self, timeout: float = 2.0) -> List[List[int]]:
-        pass
-
-    @abc.abstractmethod
-    async def set_position_counter(self, channel: int, position: int = 0) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_position_counter(self, channel: int) -> int:
-        pass
-
-    @abc.abstractmethod
-    async def move_absolute(self, channel: int, position: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def wait_for_move_complete(self, timeout: float = 30.0) -> Tuple[int, int]:
-        pass
-
-    @abc.abstractmethod
-    async def move_jog(self, channel: int, direction: int) -> None:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_drive_parameters(self, channel: int, params: DriveParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_drive_parameters(self, channel: int) -> DriveParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_jog_parameters(self, channel: int, params: JogParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_jog_parameters(self, channel: int) -> JogParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_mmi_parameters(self, channel: int, params: MMIParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_mmi_parameters(self, channel: Channel) -> MMIParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_trigger_io_config(self, config: TriggerIOConfig) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_trigger_io_config(self) -> TriggerIOConfig:
-        pass
-
-    @abc.abstractmethod
-    async def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_trigger_parameters(self, channel: int) -> TriggerParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_limit_switch_params(self, channel: int) -> Tuple[int, int]:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_feedback_signal_params(self, channel: int, mode: int, encoder_const: int = 0) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_feedback_signal_params(self, channel: int) -> Tuple[int, int]:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_channel_enable_mode(self, mode: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_channel_enable_mode(self) -> int:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_move_relative_params(self, channel: int, distance: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_move_relative_params(self, channel: int) -> int:
-        pass
-
-    @abc.abstractmethod
-    async def set_move_absolute_params(self, channel: int, distance: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_move_absolute_params(self, channel: int) -> int:
-        pass
 
 
 class KIM101(KIM101Interface):
@@ -554,7 +285,7 @@ class KIM101(KIM101Interface):
     
     # ========== Hardware Information Methods ==========
     
-    def get_hardware_info(self) -> dict[str, Any]:
+    async def get_hardware_info(self) -> dict[str, Any]:
         """
         Get hardware information from the controller.
         
@@ -587,17 +318,17 @@ class KIM101(KIM101Interface):
     
     # ========== Status Update Methods ==========
     
-    def start_status_updates(self) -> None:
+    async def start_status_updates(self) -> None:
         """Start automatic status update messages (10 Hz)."""
         self._send_short_message(self.MSG_HW_START_UPDATEMSGS, 0, 0)
         self._status_update_active = True
     
-    def stop_status_updates(self) -> None:
+    async def stop_status_updates(self) -> None:
         """Stop automatic status update messages."""
         self._send_short_message(self.MSG_HW_STOP_UPDATEMSGS, 0, 0)
         self._status_update_active = False
     
-    def get_status_update(self, timeout: float = 2.0) -> List[List[int]]: #TODO Add automatic receiving for vals
+    async def get_status_update(self, timeout: float = 2.0) -> List[List[int]]: #TODO Add automatic receiving for vals
         """
         Request and receive status update for all channels.
         
@@ -625,7 +356,7 @@ class KIM101(KIM101Interface):
     
     # ========== Position Control Methods ==========
     
-    def set_position_counter(self, channel: int, position: int = 0) -> None:
+    async def set_position_counter(self, channel: int, position: int = 0) -> None:
         """
         Set the position counter value (typically to zero).
         
@@ -637,7 +368,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_POSCOUNTS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_position_counter(self, channel: int) -> int:
+    async def get_position_counter(self, channel: int) -> int:
         """
         Get the current position counter value.
         
@@ -657,7 +388,7 @@ class KIM101(KIM101Interface):
         position = struct.unpack('<l', resp_data[4:8])[0]
         return position
     
-    def move_absolute(self, channel: int, position: int) -> None:
+    async def move_absolute(self, channel: int, position: int) -> None:
         """
         Move to an absolute position.
         
@@ -668,7 +399,7 @@ class KIM101(KIM101Interface):
         data = struct.pack('<Hl', channel, position)
         self._send_message(self.MSG_PZMOT_MOVE_ABSOLUTE, data)
     
-    def wait_for_move_complete(self, timeout: float = 30.0) -> Tuple[int, int]:
+    async def wait_for_move_complete(self, timeout: float = 30.0) -> Tuple[int, int]:
         """
         Wait for move completion message.
         
@@ -685,7 +416,7 @@ class KIM101(KIM101Interface):
         
         return chan_ident, position
     
-    def move_jog(self, channel: int, direction: int) -> None:
+    async def move_jog(self, channel: int, direction: int) -> None:
         """
         Execute a jog move.
         
@@ -699,7 +430,7 @@ class KIM101(KIM101Interface):
     
     # ========== Drive Parameter Methods ==========
     
-    def set_drive_parameters(self, channel: int, params: DriveParameters) -> None:
+    async def set_drive_parameters(self, channel: int, params: DriveParameters) -> None:
         """
         Set drive operating parameters.
         
@@ -722,7 +453,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_DRIVEOP_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_drive_parameters(self, channel: int) -> DriveParameters:
+    async def get_drive_parameters(self, channel: int) -> DriveParameters:
         """
         Get drive operating parameters.
         
@@ -746,7 +477,7 @@ class KIM101(KIM101Interface):
     
     # ========== Jog Parameter Methods ==========
     
-    def set_jog_parameters(self, channel: int, params: JogParameters) -> None:
+    async def set_jog_parameters(self, channel: int, params: JogParameters) -> None:
         """
         Set jog parameters.
         
@@ -774,7 +505,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_KCUBEJOG_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_jog_parameters(self, channel: int) -> JogParameters:
+    async def get_jog_parameters(self, channel: int) -> JogParameters:
         """
         Get jog parameters.
         
@@ -798,7 +529,7 @@ class KIM101(KIM101Interface):
     
     # ========== MMI (Joystick) Parameter Methods ==========
     
-    def set_mmi_parameters(self, channel: int, params: MMIParameters) -> None:
+    async def set_mmi_parameters(self, channel: int, params: MMIParameters) -> None:
         """
         Set top panel joystick parameters.
         
@@ -824,7 +555,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_KCUBEMMI_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_mmi_parameters(self, channel: Channel) -> MMIParameters:
+    async def get_mmi_parameters(self, channel: int) -> MMIParameters:
         """
         Get top panel joystick parameters.
         
@@ -834,7 +565,7 @@ class KIM101(KIM101Interface):
         Returns:
             MMIParameters object
         """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_KCUBEMMI_PARAMS, channel.value)
+        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_KCUBEMMI_PARAMS, channel)
         
         _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
         
@@ -849,7 +580,7 @@ class KIM101(KIM101Interface):
     
     # ========== Trigger Configuration Methods ==========
     
-    def set_trigger_io_config(self, config: TriggerIOConfig) -> None:
+    async def set_trigger_io_config(self, config: TriggerIOConfig) -> None:
         """
         Set trigger I/O configuration.
         
@@ -868,7 +599,7 @@ class KIM101(KIM101Interface):
         data = struct.pack('<H', self.SUBMSG_PZMOT_TRIGIO_CONFIG) + payload
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_trigger_io_config(self) -> TriggerIOConfig:
+    async def get_trigger_io_config(self) -> TriggerIOConfig:
         """
         Get trigger I/O configuration.
         
@@ -887,7 +618,7 @@ class KIM101(KIM101Interface):
         
         return ch1, ch2, mode1, pol1, mode2, pol2
     
-    def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> None:
+    async def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> None:
         """
         Set trigger position step parameters.
         
@@ -909,7 +640,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_TRIG_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_trigger_parameters(self, channel: int) -> TriggerParameters:
+    async def get_trigger_parameters(self, channel: int) -> TriggerParameters:
         """
         Get trigger position step parameters.
         
@@ -933,7 +664,7 @@ class KIM101(KIM101Interface):
     
     # ========== Limit Switch Methods ==========
     
-    def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> None:
+    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> None:
         """
         Set limit switch parameters.
         
@@ -947,7 +678,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_LIMSWITCH_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_limit_switch_params(self, channel: int) -> Tuple[int, int]:
+    async def get_limit_switch_params(self, channel: int) -> Tuple[int, int]:
         """
         Get limit switch parameters.
         
@@ -971,7 +702,7 @@ class KIM101(KIM101Interface):
     
     # ========== Feedback Signal Methods ==========
     
-    def set_feedback_signal_params(self, channel: int, mode: int) -> None:
+    async def set_feedback_signal_params(self, channel: int, mode: int) -> None:
         """
         Set feedback signal parameters.
         
@@ -983,7 +714,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_FEEDBACK_SIG_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_feedback_signal_params(self, channel: int) -> int:
+    async def get_feedback_signal_params(self, channel: int) -> int:
         """
         Get feedback signal parameters.
         
@@ -1007,7 +738,7 @@ class KIM101(KIM101Interface):
     
     # ========== Channel Enable Methods ==========
     
-    def set_channel_enable_mode(self, mode: int) -> None:
+    async def set_channel_enable_mode(self, mode: int) -> None:
         """
         Set channel enable mode.
         
@@ -1017,7 +748,7 @@ class KIM101(KIM101Interface):
         data = struct.pack('<HH', self.SUBMSG_PZMOT_CHANENABLE_MODE, mode)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_channel_enable_mode(self) -> int:
+    async def get_channel_enable_mode(self) -> int:
         """
         Get channel enable mode.
         
@@ -1038,7 +769,7 @@ class KIM101(KIM101Interface):
     
     # ========== Move Parameters for Trigger Methods ==========
     
-    def set_move_relative_params(self, channel: int, distance: int) -> None:
+    async def set_move_relative_params(self, channel: int, distance: int) -> None:
         """
         Set relative move distance for trigger input.
         
@@ -1050,7 +781,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_MOVERELATIVE_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_move_relative_params(self, channel: int) -> int:
+    async def get_move_relative_params(self, channel: int) -> int:
         """
         Get relative move distance for trigger input.
         
@@ -1071,7 +802,7 @@ class KIM101(KIM101Interface):
         distance = struct.unpack('<l', resp_data[4:8])[0]
         return distance
     
-    def set_move_absolute_params(self, channel: int, position: int) -> None:
+    async def set_move_absolute_params(self, channel: int, position: int) -> None:
         """
         Set absolute move position for trigger input.
         
@@ -1083,7 +814,7 @@ class KIM101(KIM101Interface):
         data = self._build_submsg_data(self.SUBMSG_PZMOT_MOVEABSOLUTE_PARAMS, channel, payload)
         self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
     
-    def get_move_absolute_params(self, channel: int) -> int:
+    async def get_move_absolute_params(self, channel: int) -> int:
         """
         Get absolute move position for trigger input.
         
@@ -1103,167 +834,3 @@ class KIM101(KIM101Interface):
         
         distance = struct.unpack('<l', resp_data[4:8])[0]
         return distance
-
-
-class KIM101Sim(KIM101Interface):
-
-    def __init__(self):
-        self.status_updates = False
-        self.zero_position = [0] * 4
-        self.abs_position = [0] * 4
-        self.last_ch_move = 1
-        
-        self.jog_params = [JogParameters((1, 1, 1, 1, 1))] * 4
-        self.drv_params = [DriveParameters((85, 1, 1))] * 4
-        self.trig_params = [TriggerParameters(1, 1, 1, 1, 1, 1, 1, 1)] * 4
-        self.trig_io_params = TriggerIOConfig(1, 1, 0, 1, 0, 1)
-        self.mmi_params = [MMIParameters(1, 1, 0, 1, 1, 100)] * 4
-        self.limsw_params = [LimitSwitchParamers(1, 1)] * 4
-        self.feedback_mode = [0] * 4
-        self.enable_mode = 0
-        self.rel_dist = [0] * 4
-        self.abs_move = [0] * 4
-
-
-    def connect(self) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
-
-    def get_hardware_info(self) -> dict[str, Any]:
-        return {
-            'serial_number': 94000009,
-            'model_number': "ABCDEF12",
-            'hardware_type': 44,
-            'firmware_version': 0x01020300,
-            'hardware_version': 0x2222,
-            'mod_state': 0x1111,
-            'num_channels': 4
-        }
-
-    def start_status_updates(self) -> None:
-        logging.warning(f"Simulated: Enable status updates")
-        self.status_updates = True
-
-    def stop_status_updates(self) -> None:
-        logging.warning(f"Simulated: Disable status updates")
-        self.status_updates = False
-
-    def __get_ch_idx(ch_val: int) -> int:
-        for i in range(4):
-            if (ch_val >> i) & 0x01:
-                return i + 1
-        raise ValueError(f"Invalid channel value [{ch_val}]")
-
-    def get_status_update(self, timeout: float = 2.0) -> List[List[int]]:
-        pass
-
-    def set_position_counter(self, channel: int, position: int = 0) -> None:
-        self.zero_position[self.__get_ch_idx(channel)] = position
-
-    def get_position_counter(self, channel: int) -> int:
-        return self.zero_position[self.__get_ch_idx(channel)]
-
-    def move_absolute(self, channel: int, position: int) -> None:
-        self.last_ch_move = self.__get_ch_idx(channel)
-        self.abs_position[self.last_ch_move] = position
-
-    def wait_for_move_complete(self, timeout: float = 30.0) -> Tuple[int, int]:
-        return self.last_ch_move, self.abs_position[self.last_ch_move]
-
-    def move_jog(self, channel: int, direction: int) -> None:
-        ch = self.__get_ch_idx(channel)
-        if direction == 0x01:
-            self.abs_position[ch] += self.jog_params[ch][1]
-        elif direction == 0x02:
-            self.abs_position[ch] -= self.jog_params[ch][2]
-        else:
-            raise ValueError(f"Unknown direction value [{direction}]")
-        self.last_ch_move = ch
-
-
-    def set_drive_parameters(self, channel: int, params: DriveParameters) -> None:
-        if not (85 <= params[0] <= 125):
-            raise ValueError("max_voltage must be between 85 and 125V")
-        if not (1 <= params[1] <= 2000):
-            raise ValueError("step_rate must be between 1 and 2000 steps/sec")
-        if not (1 <= params[2] <= 100000):
-            raise ValueError("step_accel must be between 1 and 100000 steps/sec^2")
-        self.drv_params[self.__get_ch_idx(channel)] = params
-
-    def get_drive_parameters(self, channel: int) -> DriveParameters:
-        self.drv_params[self.__get_ch_idx(channel)]
-
-
-    def set_jog_parameters(self, channel: int, params: JogParameters) -> None:
-        if not (1 <= params[1] <= 2000):
-            raise ValueError("jog_step_size_fwd must be between 1 and 2000")
-        if not (1 <= params[2] <= 2000):
-            raise ValueError("jog_step_size_rev must be between 1 and 2000")
-        if not (1 <= params[3] <= 2000):
-            raise ValueError("jog_step_rate must be between 1 and 2000")
-        if not (1 <= params[4] <= 100000):
-            raise ValueError("jog_step_accel must be between 1 and 100000")
-        self.jog_params[self.__get_ch_idx(channel)] = params
-
-    def get_jog_parameters(self, channel: int) -> JogParameters:
-        return self.jog_params[self.__get_ch_idx(channel)]
-
-
-    def set_mmi_parameters(self, channel: int, params: MMIParameters) -> None:
-        if not (1 <= params[1] <= 2000):
-            raise ValueError("js_max_step_rate must be between 1 and 2000")
-        if not (0 <= params[5] <= 100):
-            raise ValueError("disp_brightness must be between 0 and 100")
-        self.mmi_params[self.__get_ch_idx(channel)] = params
-
-    def get_mmi_parameters(self, channel: Channel) -> MMIParameters:
-        return self.mmi_params[self.__get_ch_idx(channel)]
-
-
-    def set_trigger_io_config(self, config: TriggerIOConfig) -> None:
-        self.trig_io_params = config
-
-    def get_trigger_io_config(self) -> TriggerIOConfig:
-        return self.trig_io_params
-
-    def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> None:
-        self.trig_params[self.__get_ch_idx(channel)] = params
-
-    def get_trigger_parameters(self, channel: int) -> TriggerParameters:
-        return self.trig_params[self.__get_ch_idx(channel)]
-
-
-    def set_limit_switch_params(self, channel: int, params: LimitSwitchParamers) -> None:
-        self.limsw_params[self.__get_ch_idx(channel)] = params
-
-    def get_limit_switch_params(self, channel: int) -> LimitSwitchParamers:
-        return self.limsw_params[self.__get_ch_idx(channel)]
-
-
-    def set_feedback_signal_params(self, channel: int, mode: int) -> None:
-        self.feedback_mode[self.__get_ch_idx[channel]] = mode
-
-    def get_feedback_signal_params(self, channel: int) -> int:
-        return self.feedback_mode[self.__get_ch_idx[channel]]
-
-
-    def set_channel_enable_mode(self, mode: int) -> None:
-        self.enable_mode = mode
-
-    def get_channel_enable_mode(self) -> int:
-        return self.enable_mode
-
-
-    def set_move_relative_params(self, channel: int, distance: int) -> None:
-        self.rel_dist[self.__get_ch_idx(channel)] = distance
-
-    def get_move_relative_params(self, channel: int) -> int:
-        return self.rel_dist[self.__get_ch_idx(channel)]
-
-    def set_move_absolute_params(self, channel: int, position: int) -> None:
-        self.abs_move[self.__get_ch_idx(channel)] = position
-
-    def get_move_absolute_params(self, channel: int) -> int:
-        return self.abs_move[self.__get_ch_idx(channel)]

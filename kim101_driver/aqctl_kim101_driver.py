@@ -7,7 +7,8 @@ import sys
 from sipyco import common_args
 from sipyco.pc_rpc import simple_server_loop
 
-from kim101_driver import KIM101
+from kim101_driver.kim101_driver import KIM101
+from kim101_driver.kim101_driver_sim import KIM101Sim
 
 def get_argparser():
     parser = argparse.ArgumentParser()
@@ -37,12 +38,12 @@ def main():
     asyncio.set_event_loop(loop)
     try:
         if args.simulation:
-            dev = ArtiqIbeamSmartSim()
+            dev = KIM101Sim()
         else:
             dev = KIM101(args.device)
         try:
             simple_server_loop(
-                {"artiq_ibeam_smart": dev},
+                {"kim101": dev},
                 common_args.bind_address_from_args(args),
                 args.port,
                 loop=loop,
