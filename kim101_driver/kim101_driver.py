@@ -12,17 +12,10 @@ Protocol Version: Issue 44.1
 import serial
 import struct
 import time
-from enum import IntEnum
-from typing import Optional, Tuple, List, Any
+from enum import IntEnum, Enum
+from typing import Optional, Any, Union
 from dataclasses import dataclass
-import abc
-import logging
 from kim101_driver_I import *
-
-
-class KIM101Error(Exception):
-    """Base exception for KIM101 driver errors"""
-    pass
 
 
 class Channel(IntEnum):
@@ -103,6 +96,15 @@ class ChannelEnableMode(IntEnum):
     CHANNELS_1_2 = 0x05
     CHANNELS_3_4 = 0x06
 
+class COMMAND_STATUS(Enum):
+    OK = ":OK"
+    ERROR = ":ERR"
+
+    SUBMSG_ERROR = ":ERR:SUBMSG"
+    PARSE_ERROR = ":ERR:PARSE"
+    COM_ERROR = ":ERR:COM"
+    VALUE_ERROR = ":ERR:VAL"
+
 
 class KIM101(KIM101Interface):
     """
@@ -163,8 +165,11 @@ class KIM101(KIM101Interface):
         self.serial: Optional[serial.Serial] = None
         self._status_update_active = False
         self.connect()
+    
+    def log(self, msg: str) -> None:
+        print(f"[{self.__class__.__name__}] {msg}")
         
-    def connect(self) -> None:
+    def connect(self) -> COMMAND_STATUS:
         """Open serial connection to the controller."""
         try:
             self.serial = serial.Serial(
@@ -173,17 +178,20 @@ class KIM101(KIM101Interface):
                 timeout=self.timeout
             )
         except serial.SerialException as e:
-            raise KIM101Error(f"Failed to connect to {self.device}: {e}")
+            self.log(f"Failed to connect to {self.device}")
+            return COMMAND_STATUS.COM_ERROR
+        return COMMAND_STATUS.OK
     
     def close(self) -> None:
         """Close serial connection."""
         if self.serial and self.serial.is_open:
-            self.stop_status_updates()
+            self._send_short_message(self.MSG_HW_STOP_UPDATEMSGS, 0, 0)
+            self._status_update_active = False
             self.serial.close()
     
-    def _send_message(self, msg_id: int, data: bytes = b'',
+    def _send_message(self, msg_id: int, data: bytes,
                      dest: int = DEST_GENERIC_USB, 
-                     source: int = SOURCE_GENERIC_USB) -> None:
+                     source: int = SOURCE_GENERIC_USB) -> COMMAND_STATUS:
         """
         Send a message to the controller.
         
@@ -194,26 +202,22 @@ class KIM101(KIM101Interface):
             source: Source byte
         """
         if not self.serial or not self.serial.is_open:
-            raise KIM101Error("Serial connection not open")
+            if self.connect() == COMMAND_STATUS.COM_ERROR:
+                return COMMAND_STATUS.COM_ERROR
+            # self.serial: serial.Serial
+
+        data_len = len(data)
+        header = struct.pack('<HHBB', msg_id, data_len, dest | 0x80, source)
+        msg = header + data
         
-        # Build header
-        msg_id_bytes = struct.pack('<H', msg_id)
-        
-        if len(data) == 0:
-            # Short message format (6 bytes)
-            header = msg_id_bytes + struct.pack('BBBx', 0, 0, dest) + struct.pack('B', source)
-            message = header
-        else:
-            # Long message format
-            data_len = len(data)
-            header = msg_id_bytes + struct.pack('<HBB', data_len, dest | 0x80, source)
-            message = header + data
-        
-        self.serial.write(message)
+        written = self.serial.write(msg)
+        if written != len(msg):
+            return COMMAND_STATUS.COM_ERROR
+        return COMMAND_STATUS.OK
     
     def _send_short_message(self, msg_id: int, param1: int, param2: int,
                             dest: int = DEST_GENERIC_USB,
-                            source: int = SOURCE_GENERIC_USB) -> None:
+                            source: int = SOURCE_GENERIC_USB) -> COMMAND_STATUS:
         """
         Send a short message to the controller.
         
@@ -225,12 +229,30 @@ class KIM101(KIM101Interface):
             source: Source byte
         """
         if not self.serial or not self.serial.is_open:
-            raise KIM101Error("Serial connection not open")
+            return COMMAND_STATUS.COM_ERROR
         msg = struct.pack('<HBBBB', msg_id, param1, param2, dest, source)
-        self.serial.write(msg)
+        written = self.serial.write(msg)
+        if written != len(msg):
+            return COMMAND_STATUS.COM_ERROR
+        return COMMAND_STATUS.OK
+    
+    def _read_simple_param(self, submsg_id: int, channel: int) -> Union[COMMAND_STATUS, bytes]:
+        resp = self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, submsg_id, channel)
+        if resp != COMMAND_STATUS.OK:
+            return resp
+        
+        resp = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
+        if type(resp) is COMMAND_STATUS:
+            return resp
+        data = resp[1]
+        read_submsg_id = struct.unpack('<H', data[0:2])[0]
+        if read_submsg_id != submsg_id:
+            return COMMAND_STATUS.SUBMSG_ERROR
+        
+        return data
     
     def _receive_message(self, expected_msg_id: Optional[int] = None, 
-                        timeout: Optional[float] = None) -> Tuple[int, bytes]:
+                        timeout: Optional[float] = None) -> Union[COMMAND_STATUS, tuple[int, bytes]]:
         """
         Receive a message from the controller.
         
@@ -242,7 +264,9 @@ class KIM101(KIM101Interface):
             Tuple of (message_id, data)
         """
         if not self.serial or not self.serial.is_open:
-            raise KIM101Error("Serial connection not open")
+            if self.connect() == COMMAND_STATUS.COM_ERROR:
+                return COMMAND_STATUS.COM_ERROR
+            self.serial: serial.Serial
         
         old_timeout = self.serial.timeout
         if timeout is not None:
@@ -318,31 +342,29 @@ class KIM101(KIM101Interface):
     
     # ========== Status Update Methods ==========
     
-    async def start_status_updates(self) -> None:
-        """Start automatic status update messages (10 Hz)."""
-        self._send_short_message(self.MSG_HW_START_UPDATEMSGS, 0, 0)
-        self._status_update_active = True
+    async def start_status_updates(self) -> str:
+        result = self._send_short_message(self.MSG_HW_START_UPDATEMSGS, 0, 0)
+        if result == COMMAND_STATUS.OK:
+            self._status_update_active = True
+        return result.value 
     
-    async def stop_status_updates(self) -> None:
-        """Stop automatic status update messages."""
-        self._send_short_message(self.MSG_HW_STOP_UPDATEMSGS, 0, 0)
-        self._status_update_active = False
+    async def stop_status_updates(self) -> str:
+        result = self._send_short_message(self.MSG_HW_STOP_UPDATEMSGS, 0, 0)
+        if result == COMMAND_STATUS.OK:
+            self._status_update_active = False
+        return result.value 
     
-    async def get_status_update(self, timeout: float = 2.0) -> List[List[int]]: #TODO Add automatic receiving for vals
-        """
-        Request and receive status update for all channels.
-        
-        Args:
-            timeout: Timeout in seconds
-            
-        Returns:
-            List of ChannelStatus for each channel
-        """
+    async def get_status_update(self, timeout: float = 2.0) -> Union[str, list[list[int]]]: #TODO Add automatic receiving for vals
         self._send_short_message(self.MSG_PZMOT_REQ_STATUSUPDATE, 0, 0)
-        _, data = self._receive_message(self.MSG_PZMOT_GET_STATUSUPDATE, timeout)
+        resp = self._receive_message(self.MSG_PZMOT_GET_STATUSUPDATE, timeout)
         
+        if type(resp) == COMMAND_STATUS:
+            return resp.value
+        
+        data = resp[1]
         if len(data) < 56:
-            raise KIM101Error("Invalid status update response")
+            self.log("Invalid status update response")
+            return COMMAND_STATUS.COM_ERROR.value
         
         statuses = []
         for i in range(4):
@@ -356,94 +378,52 @@ class KIM101(KIM101Interface):
     
     # ========== Position Control Methods ==========
     
-    async def set_position_counter(self, channel: int, position: int = 0) -> None:
-        """
-        Set the position counter value (typically to zero).
-        
-        Args:
-            channel: Channel to address
-            position: Position value in steps (default: 0)
-        """
+    async def set_position_counter(self, channel: int, position: int = 0) -> str:
         payload = struct.pack('<ll', position, 0)  # EncCount not used
         data = self._build_submsg_data(self.SUBMSG_PZMOT_POSCOUNTS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_position_counter(self, channel: int) -> int:
-        """
-        Get the current position counter value.
+    async def get_position_counter(self, channel: int) -> Union[str, int]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_POSCOUNTS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            Position in steps
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_POSCOUNTS, channel)
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_POSCOUNTS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        position = struct.unpack('<l', resp_data[4:8])[0]
+        position = struct.unpack('<l', data[4:8])[0]
         return position
     
-    async def move_absolute(self, channel: int, position: int) -> None:
-        """
-        Move to an absolute position.
-        
-        Args:
-            channel: Channel to move
-            position: Target position in steps from zero
-        """
+    async def move_absolute(self, channel: int, position: int) -> str:
         data = struct.pack('<Hl', channel, position)
-        self._send_message(self.MSG_PZMOT_MOVE_ABSOLUTE, data)
+        return self._send_message(self.MSG_PZMOT_MOVE_ABSOLUTE, data).value
     
-    async def wait_for_move_complete(self, timeout: float = 30.0) -> Tuple[int, int]:
-        """
-        Wait for move completion message.
+    async def wait_for_move_complete(self, timeout: float = 30.0) -> Union[str, tuple[int, int]]:
         
-        Args:
-            timeout: Maximum time to wait in seconds
-            
-        Returns:
-            Tuple of (channel, final_position)
-        """
-        _, data = self._receive_message(self.MSG_PZMOT_MOVE_COMPLETED, timeout)
+        resp = self._receive_message(self.MSG_PZMOT_MOVE_COMPLETED, timeout)
+        if type(resp) == COMMAND_STATUS:
+            return resp.value
+        data = resp[1]
         
         chan_ident = struct.unpack('<H', data[0:2])[0]
         position = struct.unpack('<l', data[2:6])[0]
         
         return chan_ident, position
     
-    async def move_jog(self, channel: int, direction: int) -> None:
-        """
-        Execute a jog move.
-        
-        Args:
-            channel (int): Channel to jog
-            direction (int): 0x01 for 'forward' or 0x02 for 'reverse'
-        """
-        # jog_dir = 0x01 if direction.lower() == 'forward' else 0x02
-        self._send_short_message(self.MSG_PZMOT_MOVE_JOG, channel, direction)
+    async def move_jog(self, channel: int, direction: int) -> str:
+        return self._send_short_message(self.MSG_PZMOT_MOVE_JOG, channel, direction).value
 
     
     # ========== Drive Parameter Methods ==========
     
-    async def set_drive_parameters(self, channel: int, params: DriveParameters) -> None:
-        """
-        Set drive operating parameters.
+    async def set_drive_parameters(self, channel: int, params: DriveParameters) -> str:
         
-        Args:
-            channel: Channel to configure
-            params: DriveParameters object
-        """
         if not (85 <= params[0] <= 125):
-            raise ValueError("max_voltage must be between 85 and 125V")
+            self.log("max_voltage must be between 85 and 125V")
+            return COMMAND_STATUS.VALUE_ERROR.value
         if not (1 <= params[1] <= 2000):
-            raise ValueError("step_rate must be between 1 and 2000 steps/sec")
+            self.log("step_rate must be between 1 and 2000 steps/sec")
+            return COMMAND_STATUS.VALUE_ERROR.value
         if not (1 <= params[2] <= 100000):
-            raise ValueError("step_accel must be between 1 and 100000 steps/sec^2")
+            self.log("step_accel must be between 1 and 100000 steps/sec^2")
+            return COMMAND_STATUS.VALUE_ERROR.value
         
         payload = struct.pack('<Hll', 
             params[0],
@@ -451,48 +431,32 @@ class KIM101(KIM101Interface):
             params[2]
         )
         data = self._build_submsg_data(self.SUBMSG_PZMOT_DRIVEOP_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_drive_parameters(self, channel: int) -> DriveParameters:
-        """
-        Get drive operating parameters.
+    async def get_drive_parameters(self, channel: int) -> Union[str, DriveParameters]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_DRIVEOP_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            DriveParameters object
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_DRIVEOP_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_DRIVEOP_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        max_voltage, step_rate, step_accel = struct.unpack('<Hll', resp_data[4:14])
-        
+        max_voltage, step_rate, step_accel = struct.unpack('<Hll', data[4:14])
         return (max_voltage, step_rate, step_accel)
     
     # ========== Jog Parameter Methods ==========
     
-    async def set_jog_parameters(self, channel: int, params: JogParameters) -> None:
-        """
-        Set jog parameters.
+    async def set_jog_parameters(self, channel: int, params: JogParameters) -> str:
         
-        Args:
-            channel: Channel to configure
-            params: JogParameters object
-        """
         if not (1 <= params[1] <= 2000):
-            raise ValueError("jog_step_size_fwd must be between 1 and 2000")
+            self.log("jog_step_size_fwd must be between 1 and 2000")
+            return COMMAND_STATUS.VALUE_ERROR.value
         if not (1 <= params[2] <= 2000):
-            raise ValueError("jog_step_size_rev must be between 1 and 2000")
+            self.log("jog_step_size_rev must be between 1 and 2000")
+            return COMMAND_STATUS.VALUE_ERROR.value
         if not (1 <= params[3] <= 2000):
-            raise ValueError("jog_step_rate must be between 1 and 2000")
+            self.log("jog_step_rate must be between 1 and 2000")
+            return COMMAND_STATUS.VALUE_ERROR.value
         if not (1 <= params[4] <= 100000):
-            raise ValueError("jog_step_accel must be between 1 and 100000")
+            self.log("jog_step_accel must be between 1 and 100000")
+            return COMMAND_STATUS.VALUE_ERROR.value
         
         payload = struct.pack('<Hllll',
             params[0], # jog_mode
@@ -503,44 +467,26 @@ class KIM101(KIM101Interface):
         )
         
         data = self._build_submsg_data(self.SUBMSG_PZMOT_KCUBEJOG_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_jog_parameters(self, channel: int) -> JogParameters:
-        """
-        Get jog parameters.
+    async def get_jog_parameters(self, channel: int) -> Union[str, JogParameters]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_KCUBEJOG_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            JogParameters object
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_KCUBEJOG_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_KCUBEJOG_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        jog_mode, step_fwd, step_rev, rate, accel = struct.unpack('<Hllll', resp_data[4:24])
-        
+        jog_mode, step_fwd, step_rev, rate, accel = struct.unpack('<Hllll', data[4:24])
         return jog_mode, step_fwd, step_rev, rate, accel
     
     # ========== MMI (Joystick) Parameter Methods ==========
     
-    async def set_mmi_parameters(self, channel: int, params: MMIParameters) -> None:
-        """
-        Set top panel joystick parameters.
+    async def set_mmi_parameters(self, channel: int, params: MMIParameters) -> str:
         
-        Args:
-            channel: Channel to configure
-            params: MMIParameters object
-        """
         if not (1 <= params[1] <= 2000):
-            raise ValueError("js_max_step_rate must be between 1 and 2000")
+            self.log("js_max_step_rate must be between 1 and 2000")
+            return COMMAND_STATUS.VALUE_ERROR.value 
         if not (0 <= params[5] <= 100):
-            raise ValueError("disp_brightness must be between 0 and 100")
+            self.log("disp_brightness must be between 0 and 100")
+            return COMMAND_STATUS.VALUE_ERROR.value
         
         payload = struct.pack('<HlHllHH',
             params[0], # js_mode
@@ -553,40 +499,21 @@ class KIM101(KIM101Interface):
         )
         
         data = self._build_submsg_data(self.SUBMSG_PZMOT_KCUBEMMI_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_mmi_parameters(self, channel: int) -> MMIParameters:
-        """
-        Get top panel joystick parameters.
-        
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            MMIParameters object
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_KCUBEMMI_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_KCUBEMMI_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
+    async def get_mmi_parameters(self, channel: int) -> Union[str, MMIParameters]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_KCUBEMMI_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
         js_mode, max_rate, dir_sense, pos1, pos2, brightness = struct.unpack(
-            '<HlHllH', resp_data[4:26])
+            '<HlHllH', data[4:26])
         
         return js_mode, max_rate, dir_sense, pos1, pos2, brightness
     
     # ========== Trigger Configuration Methods ==========
     
-    async def set_trigger_io_config(self, config: TriggerIOConfig) -> None:
-        """
-        Set trigger I/O configuration.
-        
-        Args:
-            config: TriggerIOConfig object
-        """
+    async def set_trigger_io_config(self, config: TriggerIOConfig) -> str:
         payload = struct.pack('<HHHHHH',
             config[0], # trig_channel1
             config[1], # trig_channel2
@@ -597,35 +524,18 @@ class KIM101(KIM101Interface):
         ) + b'\x00' * 12  # Reserved bytes
         
         data = struct.pack('<H', self.SUBMSG_PZMOT_TRIGIO_CONFIG) + payload
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_trigger_io_config(self) -> TriggerIOConfig:
-        """
-        Get trigger I/O configuration.
+    async def get_trigger_io_config(self) -> Union[str, TriggerIOConfig]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_TRIGIO_CONFIG, 0)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Returns:
-            TriggerIOConfig object
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_TRIGIO_CONFIG, 0)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_TRIGIO_CONFIG:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        ch1, ch2, mode1, pol1, mode2, pol2 = struct.unpack('<HHHHHH', resp_data[2:14])
+        ch1, ch2, mode1, pol1, mode2, pol2 = struct.unpack('<HHHHHH', data[2:14])
         
         return ch1, ch2, mode1, pol1, mode2, pol2
     
-    async def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> None:
-        """
-        Set trigger position step parameters.
-        
-        Args:
-            channel: Channel to configure
-            params: TriggerParameters object
-        """
+    async def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> str: 
         payload = struct.pack('<llllllll',
             params[0], # start_pos_fwd
             params[1], # interval_fwd
@@ -638,199 +548,89 @@ class KIM101(KIM101Interface):
         )
         
         data = self._build_submsg_data(self.SUBMSG_PZMOT_TRIG_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_trigger_parameters(self, channel: int) -> TriggerParameters:
-        """
-        Get trigger position step parameters.
+    async def get_trigger_parameters(self, channel: int) -> Union[str, TriggerParameters]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_TRIG_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            TriggerParameters object
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_TRIG_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_TRIG_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        values = struct.unpack('<llllllll', resp_data[4:36])
+        values = struct.unpack('<llllllll', data[4:36])
         
         return values
     
     # ========== Limit Switch Methods ==========
     
-    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> None:
-        """
-        Set limit switch parameters.
-        
-        Args:
-            channel: Channel to configure
-            fwd_limit: Forward limit switch mode
-            rev_limit: Reverse limit switch mode
-        """
+    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> str:
         payload = struct.pack('<HHH', fwd_limit, rev_limit, 0)
         
         data = self._build_submsg_data(self.SUBMSG_PZMOT_LIMSWITCH_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_limit_switch_params(self, channel: int) -> Tuple[int, int]:
-        """
-        Get limit switch parameters.
+    async def get_limit_switch_params(self, channel: int) -> Union[str, tuple[int, int]]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_LIMSWITCH_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            Tuple of (fwd_limit, rev_limit)
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_LIMSWITCH_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_LIMSWITCH_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        fwd, rev = struct.unpack('<HH', resp_data[4:8])
+        fwd, rev = struct.unpack('<HH', data[4:8])
         
         return fwd, rev
     
     # ========== Feedback Signal Methods ==========
     
-    async def set_feedback_signal_params(self, channel: int, mode: int) -> None:
-        """
-        Set feedback signal parameters.
-        
-        Args:
-            channel: Channel to configure
-            mode: Feedback signal mode
-        """
+    async def set_feedback_signal_params(self, channel: int, mode: int) -> str:
         payload = struct.pack('<Hl', mode, 0)
         data = self._build_submsg_data(self.SUBMSG_PZMOT_FEEDBACK_SIG_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_feedback_signal_params(self, channel: int) -> int:
-        """
-        Get feedback signal parameters.
+    async def get_feedback_signal_params(self, channel: int) -> Union[str, int]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_FEEDBACK_SIG_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            Tuple of (mode, encoder_const)
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_FEEDBACK_SIG_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_FEEDBACK_SIG_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        mode, _ = struct.unpack('<Hl', resp_data[4:10])
+        mode = struct.unpack('<H', data[4:6])[0]
         
         return mode
     
     # ========== Channel Enable Methods ==========
     
-    async def set_channel_enable_mode(self, mode: int) -> None:
-        """
-        Set channel enable mode.
-        
-        Args:
-            mode: Channel enable mode
-        """
+    async def set_channel_enable_mode(self, mode: int) -> str:
         data = struct.pack('<HH', self.SUBMSG_PZMOT_CHANENABLE_MODE, mode)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_channel_enable_mode(self) -> int:
-        """
-        Get channel enable mode.
+    async def get_channel_enable_mode(self) -> Union[str, int]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_CHANENABLE_MODE, 0)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Returns:
-            ChannelEnableMode
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_CHANENABLE_MODE, 0)
-        
-        msg_id, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_CHANENABLE_MODE:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        mode = struct.unpack('<H', resp_data[2:4])[0]
+        mode = struct.unpack('<H', data[2:4])[0]
         
         return mode
     
     # ========== Move Parameters for Trigger Methods ==========
     
-    async def set_move_relative_params(self, channel: int, distance: int) -> None:
-        """
-        Set relative move distance for trigger input.
-        
-        Args:
-            channel: Channel to configure
-            distance: Relative distance in steps (can be negative)
-        """
+    async def set_move_relative_params(self, channel: int, distance: int) -> str:
         payload = struct.pack('<l', distance)
         data = self._build_submsg_data(self.SUBMSG_PZMOT_MOVERELATIVE_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_move_relative_params(self, channel: int) -> int:
-        """
-        Get relative move distance for trigger input.
+    async def get_move_relative_params(self, channel: int) -> Union[int, str]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_MOVERELATIVE_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            Relative distance in steps
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_MOVERELATIVE_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_MOVERELATIVE_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        distance = struct.unpack('<l', resp_data[4:8])[0]
+        distance = struct.unpack('<l', data[4:8])[0]
         return distance
     
-    async def set_move_absolute_params(self, channel: int, position: int) -> None:
-        """
-        Set absolute move position for trigger input.
-        
-        Args:
-            channel: Channel to configure
-            distance: Absolute position in steps
-        """
+    async def set_move_absolute_params(self, channel: int, position: int) -> str:
         payload = struct.pack('<l', position)
         data = self._build_submsg_data(self.SUBMSG_PZMOT_MOVEABSOLUTE_PARAMS, channel, payload)
-        self._send_message(self.MSG_PZMOT_SET_PARAMS, data)
+        return self._send_message(self.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_move_absolute_params(self, channel: int) -> int:
-        """
-        Get absolute move position for trigger input.
+    async def get_move_absolute_params(self, channel: int) -> Union[int, str]:
+        data = self._read_simple_param(self.SUBMSG_PZMOT_MOVEABSOLUTE_PARAMS, channel)
+        if type(data) == COMMAND_STATUS:
+            return data.value
         
-        Args:
-            channel: Channel to query
-            
-        Returns:
-            Absolute position in steps
-        """
-        self._send_short_message(self.MSG_PZMOT_REQ_PARAMS, self.SUBMSG_PZMOT_MOVEABSOLUTE_PARAMS, channel)
-        
-        _, resp_data = self._receive_message(self.MSG_PZMOT_GET_PARAMS)
-        
-        submsg_id = struct.unpack('<H', resp_data[0:2])[0]
-        if submsg_id != self.SUBMSG_PZMOT_MOVEABSOLUTE_PARAMS:
-            raise KIM101Error("Unexpected sub-message response")
-        
-        distance = struct.unpack('<l', resp_data[4:8])[0]
-        return distance
+        position = struct.unpack('<l', data[4:8])[0]
+        return position

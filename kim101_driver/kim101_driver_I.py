@@ -115,121 +115,304 @@ class KIM101Interface:
         pass
 
     @abc.abstractmethod
-    async def start_status_updates(self) -> None:
-        pass
+    async def start_status_updates(self) -> str:
+        """Start automatic status update messages (10 Hz).
+        
+        Returns:
+            Operation status
+        """
 
     @abc.abstractmethod
-    async def stop_status_updates(self) -> None:
-        pass
+    async def stop_status_updates(self) -> str:
+        """Stop automatic status update messages.
+        
+        Returns:
+            Operation status
+        """
 
     @abc.abstractmethod
-    async def get_status_update(self, timeout: float = 2.0) -> list[list[int]]:
-        pass
+    async def get_status_update(self, timeout: float = 2.0) -> Union[str, list[list[int]]]:
+        """
+        Request and receive status update for all channels.
+        
+        Args:
+            timeout: Timeout in seconds
+            
+        Returns:
+            List of ChannelStatus for each channel
+        """
 
     @abc.abstractmethod
-    async def set_position_counter(self, channel: int, position: int = 0) -> None:
-        pass
+    async def set_position_counter(self, channel: int, position: int = 0) -> str:
+        """
+        Set the position counter value (typically to zero).
+        
+        Args:
+            channel: Channel to address
+            position: Position value in steps (default: 0)
+        """
 
     @abc.abstractmethod
-    async def get_position_counter(self, channel: int) -> int:
-        pass
+    async def get_position_counter(self, channel: int) -> Union[str, int]:
+        """
+        Get the current position counter value.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            Position in steps
+        """
 
     @abc.abstractmethod
-    async def move_absolute(self, channel: int, position: int) -> None:
-        pass
+    async def move_absolute(self, channel: int, position: int) -> str:
+        """
+        Move to an absolute position.
+        
+        Args:
+            channel: Channel to move
+            position: Target position in steps from zero
+        """
 
     @abc.abstractmethod
-    async def wait_for_move_complete(self, timeout: float = 30.0) -> tuple[int, int]:
-        pass
+    async def wait_for_move_complete(self, timeout: float = 30.0) -> Union[str, tuple[int, int]]:
+        """
+        Wait for move completion message.
+        
+        Args:
+            timeout: Maximum time to wait in seconds
+            
+        Returns:
+            Tuple of (channel, final_position)
+        """
 
     @abc.abstractmethod
-    async def move_jog(self, channel: int, direction: int) -> None:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_drive_parameters(self, channel: int, params: DriveParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_drive_parameters(self, channel: int) -> DriveParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_jog_parameters(self, channel: int, params: JogParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_jog_parameters(self, channel: int) -> JogParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_mmi_parameters(self, channel: int, params: MMIParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_mmi_parameters(self, channel: int) -> MMIParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_trigger_io_config(self, config: TriggerIOConfig) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_trigger_io_config(self) -> TriggerIOConfig:
-        pass
-
-    @abc.abstractmethod
-    async def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_trigger_parameters(self, channel: int) -> TriggerParameters:
-        pass
-
-
-    @abc.abstractmethod
-    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> None:
-        pass
-
-    @abc.abstractmethod
-    async def get_limit_switch_params(self, channel: int) -> tuple[int, int]:
-        pass
+    async def move_jog(self, channel: int, direction: int) -> str:
+        """
+        Execute a jog move.
+        
+        Args:
+            channel (int): Channel to jog
+            direction (int): 0x01 for 'forward' or 0x02 for 'reverse'
+        """
 
 
     @abc.abstractmethod
-    async def set_feedback_signal_params(self, channel: int, mode: int, encoder_const: int = 0) -> None:
-        pass
+    async def set_drive_parameters(self, channel: int, params: DriveParameters) -> str:
+        """
+        Set drive operating parameters.
+        
+        Args:
+            channel: Channel to configure
+            params: DriveParameters object
+        """
 
     @abc.abstractmethod
-    async def get_feedback_signal_params(self, channel: int) -> tuple[int, int]:
-        pass
+    async def get_drive_parameters(self, channel: int) -> Union[str, DriveParameters]:
+        """
+        Get drive operating parameters.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            DriveParameters object
+        """
 
 
     @abc.abstractmethod
-    async def set_channel_enable_mode(self, mode: int) -> None:
-        pass
+    async def set_jog_parameters(self, channel: int, params: JogParameters) -> str:
+        """
+        Set jog parameters.
+        
+        Args:
+            channel: Channel to configure
+            params: JogParameters object
+        """
 
     @abc.abstractmethod
-    async def get_channel_enable_mode(self) -> int:
-        pass
+    async def get_jog_parameters(self, channel: int) -> Union[str, JogParameters]:
+        """
+        Get jog parameters.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            JogParameters object
+        """
 
 
     @abc.abstractmethod
-    async def set_move_relative_params(self, channel: int, distance: int) -> None:
-        pass
+    async def set_mmi_parameters(self, channel: int, params: MMIParameters) -> str:
+        """
+        Set top panel joystick parameters.
+        
+        Args:
+            channel: Channel to configure
+            params: MMIParameters object
+        """
 
     @abc.abstractmethod
-    async def get_move_relative_params(self, channel: int) -> int:
-        pass
+    async def get_mmi_parameters(self, channel: int) -> Union[str, MMIParameters]:
+        """
+        Get top panel joystick parameters.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            MMIParameters object
+        """
+
 
     @abc.abstractmethod
-    async def set_move_absolute_params(self, channel: int, distance: int) -> None:
-        pass
+    async def set_trigger_io_config(self, config: TriggerIOConfig) -> str:
+        """
+        Set trigger I/O configuration.
+        
+        Args:
+            config: TriggerIOConfig object
+        """
 
     @abc.abstractmethod
-    async def get_move_absolute_params(self, channel: int) -> int:
-        pass
+    async def get_trigger_io_config(self) -> Union[str, TriggerIOConfig]:
+        """
+        Get trigger I/O configuration.
+        
+        Returns:
+            TriggerIOConfig object
+        """
+
+    @abc.abstractmethod
+    async def set_trigger_parameters(self, channel: int, params: TriggerParameters) -> str:
+        """
+        Set trigger position step parameters.
+        
+        Args:
+            channel: Channel to configure
+            params: TriggerParameters object
+        """
+
+    @abc.abstractmethod
+    async def get_trigger_parameters(self, channel: int) -> Union[str, TriggerParameters]:
+        """
+        Get trigger position step parameters.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            TriggerParameters object
+        """
+
+
+    @abc.abstractmethod
+    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> str:
+        """
+        Set limit switch parameters.
+        
+        Args:
+            channel: Channel to configure
+            fwd_limit: Forward limit switch mode
+            rev_limit: Reverse limit switch mode
+        """
+
+    @abc.abstractmethod
+    async def get_limit_switch_params(self, channel: int) -> Union[str, tuple[int, int]]:
+        """
+        Get limit switch parameters.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            Tuple of (fwd_limit, rev_limit)
+        """
+
+
+    @abc.abstractmethod
+    async def set_feedback_signal_params(self, channel: int, mode: int) -> str:
+        """
+        Set feedback signal parameters.
+        
+        Args:
+            channel: Channel to configure
+            mode: Feedback signal mode
+        """
+
+    @abc.abstractmethod
+    async def get_feedback_signal_params(self, channel: int) -> Union[str, int]:
+        """
+        Get feedback signal parameters.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            mode
+        """
+
+
+    @abc.abstractmethod
+    async def set_channel_enable_mode(self, mode: int) -> str:
+        """
+        Set channel enable mode.
+        
+        Args:
+            mode: Channel enable mode
+        """
+
+    @abc.abstractmethod
+    async def get_channel_enable_mode(self) -> Union[int, str]:
+        """
+        Get channel enable mode.
+        
+        Returns:
+            ChannelEnableMode
+        """
+
+
+    @abc.abstractmethod
+    async def set_move_relative_params(self, channel: int, distance: int) -> str:
+        """
+        Set relative move distance for trigger input.
+        
+        Args:
+            channel: Channel to configure
+            distance: Relative distance in steps (can be negative)
+        """
+
+    @abc.abstractmethod
+    async def get_move_relative_params(self, channel: int) -> Union[int, str]:
+        """
+        Get relative move distance for trigger input.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            Relative distance in steps
+        """
+
+    @abc.abstractmethod
+    async def set_move_absolute_params(self, channel: int, position: int) -> str:
+        """
+        Set absolute move position for trigger input.
+        
+        Args:
+            channel: Channel to configure
+            distance: Absolute position in steps
+        """
+
+    @abc.abstractmethod
+    async def get_move_absolute_params(self, channel: int) -> Union[int, str]:
+        """
+        Get absolute move position for trigger input.
+        
+        Args:
+            channel: Channel to query
+            
+        Returns:
+            Absolute position in steps
+        """
