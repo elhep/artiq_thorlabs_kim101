@@ -1,5 +1,84 @@
 import abc
 from typing import Union
+from enum import IntEnum, Enum
+
+class Channel(IntEnum):
+    """Channel identifiers for KIM101"""
+    CHANNEL_1 = 0x01
+    CHANNEL_2 = 0x02
+    CHANNEL_3 = 0x04
+    CHANNEL_4 = 0x08
+
+
+class JogMode(IntEnum):
+    """Jog mode options"""
+    CONTINUOUS = 0x01
+    SINGLE_STEP = 0x02
+
+
+class TriggerMode(IntEnum):
+    """Trigger I/O modes"""
+    DISABLED = 0x00
+    GPI = 0x01
+    RELMOVE = 0x02
+    ABSMOVE = 0x03
+    RESETCOUNT = 0x04
+    GPO = 0x0A
+    INMOTION = 0x0B
+    MAXVELOCITY = 0x0C
+    POSSTEPS_FWD = 0x0D
+    POSSTEPS_REV = 0x0E
+    POSSTEPS_BOTH = 0x0F
+    FWDLIMIT = 0x10
+    REVLIMIT = 0x11
+    EITHERLIMIT = 0x12
+
+
+class TriggerPolarity(IntEnum):
+    """Trigger polarity"""
+    HIGH = 0x01
+    LOW = 0x02
+
+
+class LimitSwitchMode(IntEnum):
+    """Limit switch modes"""
+    IGNORE = 0x01
+    MAKES_ON_CONTACT = 0x02
+    BREAKS_ON_CONTACT = 0x03
+    MAKES_HOME = 0x04
+    BREAKS_HOME = 0x05
+
+
+class FeedbackSignalMode(IntEnum):
+    """Feedback signal modes"""
+    DISABLED = 0x00
+    LIMSWITCH = 0x01
+    ENCODER = 0x02
+
+
+class JoystickMode(IntEnum):
+    """Joystick operating modes"""
+    VELOCITY_CONTROL = 0x01
+    JOG = 0x02
+    GOTO_POSITION = 0x03
+
+
+class JoystickDirection(IntEnum):
+    """Joystick direction sense"""
+    DISABLED = 0x00
+    NORMAL = 0x01
+    REVERSED = 0x02
+
+
+class ChannelEnableMode(IntEnum):
+    """Channel enable modes"""
+    NONE = 0x00
+    CHANNEL_1 = 0x01
+    CHANNEL_2 = 0x02
+    CHANNEL_3 = 0x03
+    CHANNEL_4 = 0x04
+    CHANNELS_1_2 = 0x05
+    CHANNELS_3_4 = 0x06
 
 class KIM101Exception(Exception):
     pass
@@ -102,16 +181,28 @@ TriggerParameters = tuple[int, int, int, int, int, int, int, int]
 * [7] - NumCycles: number of forward/reverse pulse sequences
 '''
 
-LimitSwitchParamers = tuple[int, int]
+LimitSwitchParameters = tuple[int, int]
 '''Parameters of Get_PZMOT_LimSwitchParams subcommands
 * [0] - FwdHardLimit
 * [1] - RevHardLimit
 '''
 
+class COMMAND_STATUS(Enum):
+    OK = ":OK"
+    ERROR = ":ERR"
+
+    SUBMSG_ERROR = ":ERR:SUBMSG"
+    DATA_ERROR = ":ERR:DATA"
+    COM_ERROR = ":ERR:COM"
+    VALUE_ERROR = ":ERR:VAL"
+
 class KIM101Interface:
 
     @abc.abstractmethod
-    async def get_hardware_info(self) -> dict[str, Any]:
+    async def get_hardware_info(self) -> Union[str, dict[str, Union[int, str]]]:
+        '''Request and receive hardware info about the device
+        
+        '''
         pass
 
     @abc.abstractmethod
@@ -308,7 +399,7 @@ class KIM101Interface:
 
 
     @abc.abstractmethod
-    async def set_limit_switch_params(self, channel: int, fwd_limit: int, rev_limit: int) -> str:
+    async def set_limit_switch_params(self, channel: int, params: LimitSwitchParameters) -> str:
         """
         Set limit switch parameters.
         
@@ -319,7 +410,7 @@ class KIM101Interface:
         """
 
     @abc.abstractmethod
-    async def get_limit_switch_params(self, channel: int) -> Union[str, tuple[int, int]]:
+    async def get_limit_switch_params(self, channel: int) -> Union[str, LimitSwitchParameters]:
         """
         Get limit switch parameters.
         
