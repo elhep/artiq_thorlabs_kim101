@@ -149,7 +149,7 @@ class KIM101(KIM101Interface):
             submsg_id: ID of the parameter to be read
             channel: 
         """
-        resp = self._send_short_message(MSG_ID.MSG_PZMOT_REQ_PARAMS, submsg_id.value, channel)
+        resp = self._send_short_message(MSG_ID.MSG_PZMOT_REQ_PARAMS, submsg_id.value, 1 << channel)
         if resp != COMMAND_STATUS.OK:
             return resp
         
@@ -214,7 +214,7 @@ class KIM101(KIM101Interface):
     def _build_submsg_data(self, submsg_id: SUBMSG_ID, channel, 
                           payload: bytes) -> bytes:
         """Build sub-message data packet."""
-        return struct.pack('<HH', submsg_id.value, channel) + payload
+        return struct.pack('<HH', submsg_id.value, 1 << channel) + payload
     
     # ========== Hardware Information Methods ==========
     
