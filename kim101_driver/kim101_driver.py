@@ -2,7 +2,7 @@ import serial
 import struct
 from enum import IntEnum
 from typing import Optional, Union
-from kim101_driver_I import *
+from kim101_driver.kim101_driver_I import *
 
 class MSG_ID(IntEnum):
     MSG_HW_REQ_INFO = 0x0005
