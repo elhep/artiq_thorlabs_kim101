@@ -432,7 +432,7 @@ class KIM101(KIM101Interface):
             return data.value
         
         js_mode, max_rate, dir_sense, pos1, pos2, brightness = struct.unpack(
-            '<HlHllH', data[4:26])
+            '<HlHllH', data[4:22])
         
         return js_mode, max_rate, dir_sense, pos1, pos2, brightness
     
