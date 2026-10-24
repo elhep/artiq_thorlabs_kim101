@@ -110,7 +110,7 @@ class KIM101(KIM101Interface):
         data_len = len(data)
         header = struct.pack('<HHBB', msg_id.value, data_len, dest | 0x80, source)
         msg = header + data
-        
+        self.log(f"Sending message: {msg.hex(' ')}")
         written = self.serial.write(msg)
         if written != len(msg):
             self.log(f"<CMD {msg_id.name}> Number of written bytes [{written}] is different from expected [{len(msg)}]")
@@ -135,6 +135,7 @@ class KIM101(KIM101Interface):
                 return COMMAND_STATUS.COM_ERROR
     
         msg = struct.pack('<HBBBB', msg_id.value, param1, param2, dest, source)
+        self.log(f"Sending message: {msg.hex(' ')}")
         written = self.serial.write(msg)
         if written != len(msg):
             self.log(f"Number of written bytes [{written}] is different from expected [{len(msg)}]",
@@ -315,7 +316,7 @@ class KIM101(KIM101Interface):
         return position
     
     async def move_absolute(self, channel: int, position: int) -> str:
-        data = struct.pack('<Hl', channel, position)
+        data = struct.pack('<Hl', 1 << channel, position)
         return self._send_message(MSG_ID.MSG_PZMOT_MOVE_ABSOLUTE, data).value
     
     async def wait_for_move_complete(self, timeout: float = 30.0) -> Union[str, tuple[int, int]]:
@@ -333,7 +334,7 @@ class KIM101(KIM101Interface):
         return chan_ident, position
     
     async def move_jog(self, channel: int, direction: int) -> str:
-        return self._send_short_message(MSG_ID.MSG_PZMOT_MOVE_JOG, channel, direction).value
+        return self._send_short_message(MSG_ID.MSG_PZMOT_MOVE_JOG, 1 << channel, direction).value
 
     
     # ========== Drive Parameter Methods ==========
