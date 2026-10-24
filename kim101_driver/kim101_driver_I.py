@@ -446,7 +446,7 @@ class KIM101Interface:
 
 
     @abc.abstractmethod
-    async def set_channel_enable_mode(self, mode: int) -> str:
+    async def write_channel_enable_mode(self, mode: int) -> str:
         """
         Set channel enable mode.
         
@@ -455,7 +455,7 @@ class KIM101Interface:
         """
 
     @abc.abstractmethod
-    async def get_channel_enable_mode(self) -> Union[int, str]:
+    async def read_channel_enable_mode(self) -> Union[int, str]:
         """
         Get channel enable mode.
         

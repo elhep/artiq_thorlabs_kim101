@@ -184,7 +184,7 @@ class KIM101(KIM101Interface):
             msg_name = expected_msg_id.name if expected_msg_id is not None else None
             header = self.serial.read(6)
             if len(header) < 6:
-                self.log("Timeout reading message header", msg_name)
+                self.log(f"Timeout reading message header; received {len(header)} bytes instead of 6", msg_name)
                 return COMMAND_STATUS.COM_ERROR
             
             msg_id = struct.unpack('<H', header[0:2])[0]
@@ -195,7 +195,7 @@ class KIM101(KIM101Interface):
                 data_len = struct.unpack('<H', header[2:4])[0]
                 data = self.serial.read(data_len)
                 if len(data) < data_len:
-                    self.log("Timeout reading message data", msg_name)
+                    self.log(f"Timeout reading message data; received {len(data)} bytes instead of {data_len}", msg_name)
                     return COMMAND_STATUS.COM_ERROR
             else:
                 # Short message - no additional data
@@ -519,11 +519,11 @@ class KIM101(KIM101Interface):
     
     # ========== Channel Enable Methods ==========
     
-    async def set_channel_enable_mode(self, mode: int) -> str:
+    async def write_channel_enable_mode(self, mode: int) -> str:
         data = struct.pack('<HH', SUBMSG_ID.SUBMSG_PZMOT_CHANENABLE_MODE.value, mode)
         return self._send_message(MSG_ID.MSG_PZMOT_SET_PARAMS, data).value
     
-    async def get_channel_enable_mode(self) -> Union[str, int]:
+    async def read_channel_enable_mode(self) -> Union[str, int]:
         data = self._read_simple_param(SUBMSG_ID.SUBMSG_PZMOT_CHANENABLE_MODE, 0)
         if type(data) == COMMAND_STATUS:
             return data.value
