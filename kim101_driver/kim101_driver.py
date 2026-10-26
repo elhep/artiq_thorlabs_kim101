@@ -62,7 +62,7 @@ class KIM101(KIM101Interface):
         self.timeout = timeout
         self.serial: Optional[serial.Serial] = None
         self._status_update_active = False
-        self.connect()
+        # self.connect()
     
     def log(self, msg: str, cmd: Optional[str] = None) -> None:
         log = f"[{self.__class__.__name__}]"
@@ -86,10 +86,11 @@ class KIM101(KIM101Interface):
     
     def close(self) -> None:
         """Close serial connection."""
-        if self.serial and self.serial.is_open:
-            self._send_short_message(MSG_ID.MSG_HW_STOP_UPDATEMSGS, 0, 0)
-            self._status_update_active = False
-            self.serial.close()
+        pass
+        # if self.serial and self.serial.is_open:
+        #     self._send_short_message(MSG_ID.MSG_HW_STOP_UPDATEMSGS, 0, 0)
+        #     self._status_update_active = False
+        #     self.serial.close()
     
     def _send_message(self, msg_id: MSG_ID, data: bytes,
                      dest: int = DEST_GENERIC_USB, 
@@ -103,15 +104,15 @@ class KIM101(KIM101Interface):
             dest: Destination byte
             source: Source byte
         """
-        if not self.serial or not self.serial.is_open:
-            if self.connect() == COMMAND_STATUS.COM_ERROR:
-                return COMMAND_STATUS.COM_ERROR
-
+        # if not self.serial or not self.serial.is_open:
+        #     if self.connect() == COMMAND_STATUS.COM_ERROR:
+        #         return COMMAND_STATUS.COM_ERROR
         data_len = len(data)
         header = struct.pack('<HHBB', msg_id.value, data_len, dest | 0x80, source)
         msg = header + data
         self.log(f"Sending message: {msg.hex(' ')}")
-        written = self.serial.write(msg)
+        with serial.Serial(self.device, self.baudrate, timeout=self.timeout) as ser:
+            written = ser.write(msg)
         if written != len(msg):
             self.log(f"<CMD {msg_id.name}> Number of written bytes [{written}] is different from expected [{len(msg)}]")
             return COMMAND_STATUS.COM_ERROR
@@ -130,13 +131,14 @@ class KIM101(KIM101Interface):
             dest: Destination byte
             source: Source byte
         """
-        if not self.serial or not self.serial.is_open:
-            if self.connect() == COMMAND_STATUS.COM_ERROR:
-                return COMMAND_STATUS.COM_ERROR
+        # if not self.serial or not self.serial.is_open:
+        #     if self.connect() == COMMAND_STATUS.COM_ERROR:
+        #         return COMMAND_STATUS.COM_ERROR
     
         msg = struct.pack('<HBBBB', msg_id.value, param1, param2, dest, source)
         self.log(f"Sending message: {msg.hex(' ')}")
-        written = self.serial.write(msg)
+        with serial.Serial(self.device, self.baudrate, timeout=self.timeout) as ser:
+            written = ser.write(msg)
         if written != len(msg):
             self.log(f"Number of written bytes [{written}] is different from expected [{len(msg)}]",
                       msg_id.name)
@@ -175,32 +177,33 @@ class KIM101(KIM101Interface):
         Returns:
             Tuple of (message_id, data)
         """
-        if not self.serial or not self.serial.is_open:
-            if self.connect() == COMMAND_STATUS.COM_ERROR:
-                return COMMAND_STATUS.COM_ERROR
+        # if not self.serial or not self.serial.is_open:
+        #     if self.connect() == COMMAND_STATUS.COM_ERROR:
+        #         return COMMAND_STATUS.COM_ERROR
             # self.serial: serial.Serial
 
         try:
             # Read header (6 bytes minimum)
             msg_name = expected_msg_id.name if expected_msg_id is not None else None
-            header = self.serial.read(6)
-            if len(header) < 6:
-                self.log(f"Timeout reading message header; received {len(header)} bytes instead of 6", msg_name)
-                return COMMAND_STATUS.COM_ERROR
-            
-            msg_id = struct.unpack('<H', header[0:2])[0]
-            
-            # Check if this is a long message
-            if header[4] & 0x80:
-                # Long message - read data length and payload
-                data_len = struct.unpack('<H', header[2:4])[0]
-                data = self.serial.read(data_len)
-                if len(data) < data_len:
-                    self.log(f"Timeout reading message data; received {len(data)} bytes instead of {data_len}", msg_name)
+            with serial.Serial(self.device, self.baudrate, timeout=self.timeout) as ser:
+                header = ser.read(6)
+                if len(header) < 6:
+                    self.log(f"Timeout reading message header; received {len(header)} bytes instead of 6", msg_name)
                     return COMMAND_STATUS.COM_ERROR
-            else:
-                # Short message - no additional data
-                data = b''
+                
+                msg_id = struct.unpack('<H', header[0:2])[0]
+                
+                # Check if this is a long message
+                if header[4] & 0x80:
+                    # Long message - read data length and payload
+                    data_len = struct.unpack('<H', header[2:4])[0]
+                    data = ser.read(data_len)
+                    if len(data) < data_len:
+                        self.log(f"Timeout reading message data; received {len(data)} bytes instead of {data_len}", msg_name)
+                        return COMMAND_STATUS.COM_ERROR
+                else:
+                    # Short message - no additional data
+                    data = b''
             
             if expected_msg_id is not None and MSG_ID(msg_id) != expected_msg_id:
                 self.log(
@@ -277,10 +280,10 @@ class KIM101(KIM101Interface):
         if resp != COMMAND_STATUS.OK:
             return resp.value
 
-        old_timeout = self.serial.timeout
-        self.serial.timeout = timeout
+        old_timeout = self.timeout
+        self.timeout = timeout
         resp = self._receive_message(MSG_ID.MSG_PZMOT_GET_STATUSUPDATE)
-        self.serial.timeout = old_timeout
+        self.timeout = old_timeout
         
         if type(resp) == COMMAND_STATUS:
             return resp.value
@@ -320,10 +323,10 @@ class KIM101(KIM101Interface):
         return self._send_message(MSG_ID.MSG_PZMOT_MOVE_ABSOLUTE, data).value
     
     async def wait_for_move_complete(self, timeout: float = 30.0) -> Union[str, tuple[int, int]]:
-        old_timeout = self.serial.timeout
-        self.serial.timeout = timeout
+        old_timeout = self.timeout
+        self.timeout = timeout
         resp = self._receive_message(MSG_ID.MSG_PZMOT_MOVE_COMPLETED)
-        self.serial.timeout = old_timeout
+        self.timeout = old_timeout
         if type(resp) == COMMAND_STATUS:
             return resp.value
         data = resp[1]
